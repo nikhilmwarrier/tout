@@ -79,6 +79,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
@@ -415,8 +416,6 @@ private fun Dial(onSelect: (Tab) -> Unit, onCenterTap: () -> Unit) {
 
     val density = LocalDensity.current
     val radiusPx = with(density) { 68.dp.toPx() }
-    // ponytail: uniform labels — same size/weight, selected reads via color only
-    val labelStyle = MaterialTheme.typography.bodyLarge
 
     Box(
         Modifier
@@ -472,14 +471,22 @@ private fun Dial(onSelect: (Tab) -> Unit, onCenterTap: () -> Unit) {
                     tickIfChanged(i)
                     onSelect(t)
                 }) {
-                    Text(
-                        when (t) {
+                    // ponytail: lucide trio, 28dp uniform — selected reads via tint only
+                    Icon(
+                        painter = painterResource(
+                            when (t) {
+                                Tab.Money -> R.drawable.ic_dial_money
+                                Tab.Food -> R.drawable.ic_dial_food
+                                Tab.Note -> R.drawable.ic_dial_note
+                            }
+                        ),
+                        contentDescription = when (t) {
                             Tab.Money -> "Money"
                             Tab.Food -> "Food"
                             Tab.Note -> "Journal"
                         },
-                        style = labelStyle,
-                        color = if (Tab.entries.indexOf(t) == tickIndex) Color.White else Color.Gray
+                        tint = if (Tab.entries.indexOf(t) == tickIndex) Color.White else Color.Gray,
+                        modifier = Modifier.size(28.dp)
                     )
                 }
             }
