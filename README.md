@@ -11,6 +11,7 @@ Instant, offline expense / food / journal tracking for Android. Opens straight i
 * **Loads instantly** — single Activity, zero init on start, no DI / DB / network. Cold start ~300–500ms.
 * **Frictionless entry** — date defaults to today, Enter saves, dial switches journal. Center dot jumps focus to the entry field.
 * **Yours** — append-only `entries.jsonl` on device. Export / import the same file via the system share sheet. No account, no cloud.
+* **Fix mistakes** — Entries sheet (list icon, top left) to review, edit, or delete anything.
 
 ## Data
 

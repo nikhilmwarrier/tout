@@ -20,6 +20,24 @@ class StoreTest {
     }
 }
 
+// ponytail: one check for the entries editor core — delete drops, update replaces in place
+class StoreListTest {    private val a = Entry(id = "a", date = "2026-09-25", type = "money", amount = 10.0)
+    private val b = Entry(id = "b", date = "2026-09-25", type = "note", text = "hi")
+
+    @Test
+    fun deleteDropsOnlyTarget() {
+        assertEquals(listOf(b), Store.withDeleted(listOf(a, b), setOf("a")))
+        assertEquals(listOf(a, b), Store.withDeleted(listOf(a, b), setOf("zzz")))
+    }
+
+    @Test
+    fun updateReplacesInPlace() {
+        val b2 = b.copy(text = "yo")
+        val out = Store.withUpdated(listOf(a, b), b2)
+        assertEquals(listOf(a, b2), out)
+        assertEquals(listOf("a", "b"), out.map { it.id }) // order preserved
+    }
+}
 // ponytail: one check for the dial snap — chosen journal must land exactly at top
 class DialMathTest {
     @Test

@@ -53,10 +53,35 @@ object Store {
     }
     }
 
-    // ponytail: append-only file, no DB — Room when on-device search matters
+    // ponytail: flat JSONL file, no DB — Room when on-device search matters
     fun append(ctx: Context, e: Entry) {
         val f = file(ctx)
         f.appendText(toJson(e) + "\n")
+    }
+
+    // ponytail: pure list ops — unit-testable without Context; IO stays thin below
+    fun withDeleted(entries: List<Entry>, ids: Set<String>): List<Entry> =
+        entries.filter { it.id !in ids }
+
+    fun withUpdated(entries: List<Entry>, updated: Entry): List<Entry> =
+        entries.map { if (it.id == updated.id) updated else it }
+
+    fun fmtAmount(a: Double?): String =
+        a?.let { if (it % 1.0 == 0.0) it.toLong().toString() else it.toString() } ?: ""
+
+    fun readAll(ctx: Context): List<Entry> {
+        val f = file(ctx)
+        if (!f.exists()) return emptyList()
+        return f.bufferedReader().lineSequence().mapNotNull(::parseLine).toList()
+    }
+
+    fun rewrite(ctx: Context, entries: List<Entry>) {
+        val f = file(ctx)
+        val tmp = File(ctx.filesDir, "$FILE.tmp")
+        tmp.bufferedWriter().use { w -> entries.forEach { w.write(toJson(it) + "\n") } }
+        if (!tmp.renameTo(f)) {
+            f.bufferedWriter().use { w -> entries.forEach { w.write(toJson(it) + "\n") } }
+        }
     }
 
     fun readIds(ctx: Context): Set<String> {

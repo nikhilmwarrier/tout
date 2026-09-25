@@ -19,6 +19,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -46,27 +47,34 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -112,6 +120,7 @@ class MainActivity : ComponentActivity() {
 
 private enum class Tab { Money, Food, Note }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun App() {
     val ctx = LocalContext.current
@@ -123,9 +132,36 @@ private fun App() {
     var tags by remember { mutableStateOf("") }
     var status by remember { mutableStateOf("") }
     var justSaved by remember { mutableStateOf(false) }
+    var showEntries by remember { mutableStateOf(false) }
+    var entries by remember { mutableStateOf(listOf<Entry>()) }
+    var editing by remember { mutableStateOf<Entry?>(null) }
     // ponytail: dial center dot jumps here — one requester shared by both first-input fields (only one is shown)
     val entryFocus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
+
+    // ponytail: shared by main form + edit sheet — one chip style everywhere
+    @Composable
+    fun Chip(glyph: @Composable () -> Unit) {
+        Box(
+            Modifier.padding(end = 12.dp).size(48.dp).background(Color(0xFF2B2B2B), RoundedCornerShape(8.dp)),
+            contentAlignment = Alignment.Center
+        ) { glyph() }
+    }
+
+    // ponytail: underline inputs like Splitwise — transparent box, indicator line + icon chip only
+    val fieldColors = TextFieldDefaults.colors(
+        focusedContainerColor = Color.Transparent,
+        unfocusedContainerColor = Color.Transparent,
+        disabledContainerColor = Color.Transparent,
+        focusedIndicatorColor = MaterialTheme.colorScheme.primary,
+        unfocusedIndicatorColor = Color.DarkGray,
+        // ponytail: explicit ink — theme-resolved text came out black on some devices
+        focusedTextColor = Color.White,
+        unfocusedTextColor = Color.White,
+        focusedPlaceholderColor = Color.Gray,
+        unfocusedPlaceholderColor = Color.Gray,
+        cursorColor = MaterialTheme.colorScheme.primary,
+    )
 
     /** False when there's nothing valid to save. Clears the whole form on success. */
     fun save(): Boolean {
@@ -171,6 +207,12 @@ private fun App() {
         return true
     }
 
+    fun refreshEntries() {
+        scope.launch(Dispatchers.IO) {
+            entries = Store.readAll(ctx).sortedByDescending { it.ts }
+        }
+    }
+
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
@@ -193,13 +235,23 @@ private fun App() {
     // ponytail: forced pure-black dark scheme, no toggle — system theme when asked
     MaterialTheme(colorScheme = darkColorScheme(background = Color.Black, surface = Color.Black)) {
         Column(Modifier.fillMaxSize().background(Color.Black).padding(24.dp)) {
-            // top bar: export/import always visible — popup menus vanish on pure black
-            Row(Modifier.fillMaxWidth(), Arrangement.End) {
-                TextButton(onClick = { exportLauncher.launch("tout-entries.jsonl") }) {
-                    Text("Export", color = Color.Gray)
+            // top bar: history left, export/import right — popups vanish on pure black so all stay visible
+            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                IconButton(onClick = {
+                    Haptics.tick(ctx)
+                    editing = null
+                    refreshEntries()
+                    showEntries = true
+                }) {
+                    Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Entries", tint = Color.Gray)
                 }
-                TextButton(onClick = { importLauncher.launch(arrayOf("*/*")) }) {
-                    Text("Import", color = Color.Gray)
+                Row {
+                    TextButton(onClick = { exportLauncher.launch("tout-entries.jsonl") }) {
+                        Text("Export", color = Color.Gray)
+                    }
+                    TextButton(onClick = { importLauncher.launch(arrayOf("*/*")) }) {
+                        Text("Import", color = Color.Gray)
+                    }
                 }
             }
             // date, defaults today, tap to change
@@ -213,22 +265,6 @@ private fun App() {
                 }) { Text(date.toString()) }
             }
             Spacer(Modifier.height(32.dp))
-            // ponytail: underline inputs like Splitwise — transparent box, indicator line + icon chip only
-            val fieldColors = TextFieldDefaults.colors(
-                focusedContainerColor = Color.Transparent,
-                unfocusedContainerColor = Color.Transparent,
-                disabledContainerColor = Color.Transparent,
-                focusedIndicatorColor = MaterialTheme.colorScheme.primary,
-                unfocusedIndicatorColor = Color.DarkGray,
-            )
-            @Composable
-            fun Chip(glyph: @Composable () -> Unit) {
-                // ponytail: end padding — M3's built-in leading-icon gap is too tight
-                Box(
-                    Modifier.padding(end = 12.dp).size(48.dp).background(Color(0xFF2B2B2B), RoundedCornerShape(8.dp)),
-                    contentAlignment = Alignment.Center
-                ) { glyph() }
-            }
             // microinteraction: tab switch morphs the input (springy scale + fade)
             AnimatedContent(
                 targetState = tab,
@@ -282,44 +318,59 @@ private fun App() {
                 keyboardActions = KeyboardActions(onDone = { save() }),
                 modifier = Modifier.fillMaxWidth()
             )
-            // actions below the form, end-aligned — only once there's something to save (tags optional)
+            // actions below the form, end-aligned — only once there's something to save (tags optional).
+            // Emil-style: Save pops with overshoot, PhonePe trails a beat behind; both drift out slow with a fade.
             val canSave = if (tab == Tab.Money) amount.isNotBlank() else text.isNotBlank()
-            AnimatedVisibility(
-                visible = canSave,
-                // microinteraction: actions slide in from the right, where the thumb is
-                enter = slideInHorizontally(
-                    initialOffsetX = { it / 2 },
-                    animationSpec = spring(stiffness = Spring.StiffnessMedium)
-                ) + fadeIn(),
-                exit = slideOutHorizontally(
-                    targetOffsetX = { it / 2 },
-                    animationSpec = spring(stiffness = Spring.StiffnessMedium)
-                ) + fadeOut(),
-                modifier = Modifier.fillMaxWidth(),
+            val showPhonePe = canSave && tab == Tab.Money && PhonePe.installed(ctx)
+            Row(
+                Modifier.fillMaxWidth().padding(top = 16.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(
-                    Modifier.fillMaxWidth().padding(top = 16.dp),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically,
+                AnimatedVisibility(
+                    visible = showPhonePe,
+                    enter = slideInHorizontally(
+                        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+                        initialOffsetX = { it / 2 }
+                    ) + fadeIn(tween(150, delayMillis = 90)),
+                    exit = slideOutHorizontally(
+                        animationSpec = spring(stiffness = Spring.StiffnessLow),
+                        targetOffsetX = { it / 2 }
+                    ) + fadeOut(tween(300)),
                 ) {
-                    // ponytail: fresh check each composition — appears right after PhonePe is installed, no restart needed
-                    if (tab == Tab.Money && PhonePe.installed(ctx)) {
-                        // ponytail: borderless icon — no chrome, saves first so the entry lands before you pay
-                        IconButton(
-                            onClick = {
-                                Haptics.tick(ctx)
-                                if (save()) PhonePe.open(ctx)
-                            },
-                            modifier = Modifier.size(56.dp),
-                        ) {
-                            Icon(
-                                Icons.Filled.ExitToApp,
-                                contentDescription = "Save and open PhonePe",
-                                tint = Color.White
-                            )
-                        }
-                        Spacer(Modifier.width(12.dp))
+                    // ponytail: borderless icon — no chrome, saves first so the entry lands before you pay
+                    IconButton(
+                        onClick = {
+                            Haptics.tick(ctx)
+                            if (save()) PhonePe.open(ctx)
+                        },
+                        modifier = Modifier.size(56.dp),
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ExitToApp,
+                            contentDescription = "Save and open PhonePe",
+                            tint = Color.White
+                        )
                     }
+                }
+                if (showPhonePe) Spacer(Modifier.width(12.dp))
+                AnimatedVisibility(
+                    visible = canSave,
+                    enter = scaleIn(
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessMediumLow
+                        ),
+                        initialScale = 0.5f
+                    ) + slideInHorizontally(
+                        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+                        initialOffsetX = { it / 3 }
+                    ) + fadeIn(),
+                    exit = slideOutHorizontally(
+                        animationSpec = spring(stiffness = Spring.StiffnessLow),
+                        targetOffsetX = { it / 2 }
+                    ) + fadeOut(tween(300)),
+                ) {
                     // microinteraction: Save squashes on press, springs back; flashes green + Done on save
                     val saveInteraction = remember { MutableInteractionSource() }
                     val savePressed by saveInteraction.collectIsPressedAsState()
@@ -381,6 +432,168 @@ private fun App() {
                 )
             }
             Spacer(Modifier.height(28.dp))
+        }
+        // entries editor — bottom sheet over the same black
+        if (showEntries) {
+            ModalBottomSheet(
+                onDismissRequest = { showEntries = false },
+                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                containerColor = Color.Black,
+                contentColor = Color.White,
+            ) {
+                val target = editing
+                if (target == null) {
+                    Text(
+                        "Entries",
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+                    )
+                    if (entries.isEmpty()) {
+                        Text(
+                            "Nothing here yet — go log something.",
+                            color = Color.Gray,
+                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 24.dp)
+                        )
+                    } else {
+                        LazyColumn(Modifier.padding(bottom = 32.dp)) {
+                            items(entries, key = { it.id }) { e ->
+                                Row(
+                                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(
+                                        painterResource(
+                                            when (e.type) {
+                                                "money" -> R.drawable.ic_dial_money
+                                                "food" -> R.drawable.ic_dial_food
+                                                else -> R.drawable.ic_dial_note
+                                            }
+                                        ),
+                                        contentDescription = null,
+                                        tint = Color.Gray,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                    Spacer(Modifier.width(16.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            if (e.type == "money") "₹${Store.fmtAmount(e.amount)}" else e.text.orEmpty(),
+                                            color = Color.White
+                                        )
+                                        val sub = listOf(e.date, e.tags.joinToString(", "))
+                                            .filter { it.isNotBlank() }.joinToString(" • ")
+                                        Text(sub, color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    IconButton(onClick = { editing = e }) {
+                                        Icon(Icons.Filled.Edit, contentDescription = "Edit", tint = Color.Gray)
+                                    }
+                                    IconButton(onClick = {
+                                        Haptics.tick(ctx)
+                                        scope.launch(Dispatchers.IO) {
+                                            val next = Store.withDeleted(Store.readAll(ctx), setOf(e.id))
+                                            Store.rewrite(ctx, next)
+                                            withContext(Dispatchers.Main) {
+                                                entries = next.sortedByDescending { it.ts }
+                                                status = "Deleted"
+                                            }
+                                        }
+                                    }) {
+                                        Icon(
+                                            Icons.Filled.Delete,
+                                            contentDescription = "Delete",
+                                            tint = Color(0xFFCF6679)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // edit form — same underline fields as the main screen
+                    var eAmount by remember(target.id) {
+                        mutableStateOf(Store.fmtAmount(target.amount))
+                    }
+                    var eText by remember(target.id) { mutableStateOf(target.text ?: "") }
+                    var eTags by remember(target.id) { mutableStateOf(target.tags.joinToString(", ")) }
+                    fun saveEdit(): Boolean {
+                        val tagList = eTags.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                        val updated = when (target.type) {
+                            "money" -> {
+                                val a = eAmount.toDoubleOrNull() ?: return false
+                                target.copy(amount = a, tags = tagList)
+                            }
+                            else -> {
+                                if (eText.isBlank()) return false
+                                target.copy(text = eText.trim(), tags = tagList)
+                            }
+                        }
+                        scope.launch(Dispatchers.IO) {
+                            val next = Store.withUpdated(Store.readAll(ctx), updated)
+                            Store.rewrite(ctx, next)
+                            withContext(Dispatchers.Main) {
+                                entries = next.sortedByDescending { it.ts }
+                                editing = null
+                                status = "Updated ✓"
+                            }
+                        }
+                        return true
+                    }
+                    Text(
+                        "Edit entry",
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+                    )
+                    if (target.type == "money") {
+                        TextField(
+                            value = eAmount,
+                            onValueChange = { eAmount = it },
+                            leadingIcon = { Chip { Text("₹", fontSize = 24.sp, color = Color.White) } },
+                            singleLine = true,
+                            colors = fieldColors,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Decimal,
+                                imeAction = ImeAction.Done
+                            ),
+                            keyboardActions = KeyboardActions(onDone = { saveEdit() }),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)
+                        )
+                    } else {
+                        TextField(
+                            value = eText,
+                            onValueChange = { eText = it },
+                            singleLine = true,
+                            colors = fieldColors,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(onDone = { saveEdit() }),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)
+                        )
+                    }
+                    TextField(
+                        value = eTags,
+                        onValueChange = { eTags = it },
+                        leadingIcon = { Chip { Text("#", fontSize = 24.sp, color = Color.White) } },
+                        placeholder = { Text("Tags") },
+                        singleLine = true,
+                        colors = fieldColors,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { saveEdit() }),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)
+                    )
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        TextButton(onClick = { editing = null }) {
+                            Text("Cancel", color = Color.Gray)
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Button(onClick = {
+                            Haptics.tick(ctx)
+                            saveEdit()
+                        }) { Text("Save") }
+                    }
+                    Spacer(Modifier.height(24.dp))
+                }
+            }
         }
     }
 }
