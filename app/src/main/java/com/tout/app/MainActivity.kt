@@ -16,12 +16,15 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
@@ -31,7 +34,9 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -46,14 +51,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -87,6 +96,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
@@ -112,32 +122,34 @@ private fun App() {
     var text by remember { mutableStateOf("") }
     var tags by remember { mutableStateOf("") }
     var status by remember { mutableStateOf("") }
+    var justSaved by remember { mutableStateOf(false) }
     // ponytail: dial center dot jumps here — one requester shared by both first-input fields (only one is shown)
     val entryFocus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
 
-    fun save() {
+    /** False when there's nothing valid to save. Clears the whole form on success. */
+    fun save(): Boolean {
         val tagList = tags.split(",").map { it.trim() }.filter { it.isNotEmpty() }
         val entry = when (tab) {
             Tab.Money -> {
                 val a = amount.toDoubleOrNull()
                 if (a == null) {
                     status = "Enter an amount"
-                    return
+                    return false
                 }
                 Entry(date = date.toString(), type = "money", amount = a, tags = tagList)
             }
             Tab.Food -> {
                 if (text.isBlank()) {
                     status = "Describe the food"
-                    return
+                    return false
                 }
                 Entry(date = date.toString(), type = "food", text = text.trim(), tags = tagList)
             }
             Tab.Note -> {
                 if (text.isBlank()) {
                     status = "Write something"
-                    return
+                    return false
                 }
                 Entry(date = date.toString(), type = "note", text = text.trim(), tags = tagList)
             }
@@ -147,9 +159,16 @@ private fun App() {
             withContext(Dispatchers.Main) {
                 amount = ""
                 text = ""
+                tags = ""
                 status = "Saved ✓"
+                justSaved = true
+                scope.launch {
+                    delay(1200)
+                    justSaved = false
+                }
             }
         }
+        return true
     }
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -263,30 +282,76 @@ private fun App() {
                 keyboardActions = KeyboardActions(onDone = { save() }),
                 modifier = Modifier.fillMaxWidth()
             )
-            Spacer(Modifier.height(16.dp))
-            // microinteraction: Save squashes on press, springs back on release
-            val saveInteraction = remember { MutableInteractionSource() }
-            val savePressed by saveInteraction.collectIsPressedAsState()
-            val saveScale by animateFloatAsState(
-                if (savePressed) 0.97f else 1f,
-                animationSpec = spring(stiffness = Spring.StiffnessHigh),
-                label = "save",
-            )
-            Button(
-                onClick = { save() },
-                interactionSource = saveInteraction,
-                modifier = Modifier.fillMaxWidth().graphicsLayer {
-                    scaleX = saveScale
-                    scaleY = saveScale
+            // actions below the form, end-aligned — only once there's something to save (tags optional)
+            val canSave = if (tab == Tab.Money) amount.isNotBlank() else text.isNotBlank()
+            AnimatedVisibility(
+                visible = canSave,
+                // microinteraction: actions slide in from the right, where the thumb is
+                enter = slideInHorizontally(
+                    initialOffsetX = { it / 2 },
+                    animationSpec = spring(stiffness = Spring.StiffnessMedium)
+                ) + fadeIn(),
+                exit = slideOutHorizontally(
+                    targetOffsetX = { it / 2 },
+                    animationSpec = spring(stiffness = Spring.StiffnessMedium)
+                ) + fadeOut(),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 16.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // ponytail: fresh check each composition — appears right after PhonePe is installed, no restart needed
+                    if (tab == Tab.Money && PhonePe.installed(ctx)) {
+                        // ponytail: borderless icon — no chrome, saves first so the entry lands before you pay
+                        IconButton(
+                            onClick = {
+                                Haptics.tick(ctx)
+                                if (save()) PhonePe.open(ctx)
+                            },
+                            modifier = Modifier.size(56.dp),
+                        ) {
+                            Icon(
+                                Icons.Filled.ExitToApp,
+                                contentDescription = "Save and open PhonePe",
+                                tint = Color.White
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                    }
+                    // microinteraction: Save squashes on press, springs back; flashes green + Done on save
+                    val saveInteraction = remember { MutableInteractionSource() }
+                    val savePressed by saveInteraction.collectIsPressedAsState()
+                    val saveScale by animateFloatAsState(
+                        if (savePressed) 0.9f else 1f,
+                        animationSpec = spring(stiffness = Spring.StiffnessHigh),
+                        label = "save",
+                    )
+                    val saveBg by animateColorAsState(
+                        if (justSaved) Color(0xFF4CAF50) else MaterialTheme.colorScheme.primary,
+                        label = "saveBg",
+                    )
+                    Button(
+                        onClick = {
+                            Haptics.tick(ctx)
+                            save()
+                        },
+                        interactionSource = saveInteraction,
+                        shape = CircleShape,
+                        contentPadding = PaddingValues(0.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = saveBg),
+                        modifier = Modifier.size(56.dp).graphicsLayer {
+                            scaleX = saveScale
+                            scaleY = saveScale
+                        }
+                    ) {
+                        Icon(
+                            if (justSaved) Icons.Filled.Done else Icons.Filled.Check,
+                            contentDescription = "Save"
+                        )
+                    }
                 }
-            ) { Text("Save") }
-            // ponytail: fresh check each composition — appears right after PhonePe is installed, no restart needed
-            if (tab == Tab.Money && PhonePe.installed(ctx)) {
-                Spacer(Modifier.height(12.dp))
-                OutlinedButton(
-                    onClick = { if (!PhonePe.open(ctx)) status = "Couldn't open PhonePe" },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("Open PhonePe") }
             }
             // microinteraction: status pops in with a soft bounce, fades out
             AnimatedVisibility(
