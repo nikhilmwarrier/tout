@@ -31,17 +31,22 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -176,6 +181,21 @@ private fun App() {
                 }) { Text(date.toString()) }
             }
             Spacer(Modifier.height(24.dp))
+            // ponytail: underline inputs like Splitwise — transparent box, indicator line + icon chip only
+            val fieldColors = TextFieldDefaults.colors(
+                focusedContainerColor = Color.Transparent,
+                unfocusedContainerColor = Color.Transparent,
+                disabledContainerColor = Color.Transparent,
+                focusedIndicatorColor = MaterialTheme.colorScheme.primary,
+                unfocusedIndicatorColor = Color.DarkGray,
+            )
+            @Composable
+            fun Chip(glyph: @Composable () -> Unit) {
+                Box(
+                    Modifier.size(48.dp).background(Color(0xFF2B2B2B), RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center
+                ) { glyph() }
+            }
             // main input: big amount for Money, big text otherwise
             if (tab == Tab.Money) {
                 TextField(
@@ -183,9 +203,10 @@ private fun App() {
                     onValueChange = { amount = it },
                     // ponytail: input matches placeholder size — M3 defaults to 16sp under a 40sp hint
                     textStyle = TextStyle(fontSize = 40.sp),
-                    prefix = { Text("₹", fontSize = 40.sp) },
+                    leadingIcon = { Chip { Text("₹", fontSize = 24.sp, color = Color.White) } },
                     placeholder = { Text("30", fontSize = 40.sp) },
                     singleLine = true,
+                    colors = fieldColors,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Decimal,
                         imeAction = ImeAction.Done
@@ -197,7 +218,9 @@ private fun App() {
                 TextField(
                     value = text,
                     onValueChange = { text = it },
+                    leadingIcon = { Chip { Icon(Icons.Filled.Edit, contentDescription = null, tint = Color.White) } },
                     placeholder = { Text(if (tab == Tab.Food) "What did you eat?" else "What's on your mind?") },
+                    colors = fieldColors,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { save() }),
                     modifier = Modifier.fillMaxWidth().focusRequester(entryFocus)
@@ -207,8 +230,10 @@ private fun App() {
             TextField(
                 value = tags,
                 onValueChange = { tags = it },
+                leadingIcon = { Chip { Text("#", fontSize = 24.sp, color = Color.White) } },
                 placeholder = { Text("Tags: Cafe BBG, Samosa") },
                 singleLine = true,
+                colors = fieldColors,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { save() }),
                 modifier = Modifier.fillMaxWidth()
