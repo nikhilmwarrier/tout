@@ -203,8 +203,9 @@ private fun App() {
             )
             @Composable
             fun Chip(glyph: @Composable () -> Unit) {
+                // ponytail: end padding — M3's built-in leading-icon gap is too tight
                 Box(
-                    Modifier.size(48.dp).background(Color(0xFF2B2B2B), RoundedCornerShape(8.dp)),
+                    Modifier.padding(end = 12.dp).size(48.dp).background(Color(0xFF2B2B2B), RoundedCornerShape(8.dp)),
                     contentAlignment = Alignment.Center
                 ) { glyph() }
             }
