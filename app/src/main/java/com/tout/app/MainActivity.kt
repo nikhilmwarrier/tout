@@ -14,11 +14,22 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Box
@@ -61,6 +72,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.input.pointer.pointerInput
@@ -160,7 +172,7 @@ private fun App() {
 
     // ponytail: forced pure-black dark scheme, no toggle — system theme when asked
     MaterialTheme(colorScheme = darkColorScheme(background = Color.Black, surface = Color.Black)) {
-        Column(Modifier.fillMaxSize().background(Color.Black).padding(16.dp)) {
+        Column(Modifier.fillMaxSize().background(Color.Black).padding(24.dp)) {
             // top bar: export/import always visible — popup menus vanish on pure black
             Row(Modifier.fillMaxWidth(), Arrangement.End) {
                 TextButton(onClick = { exportLauncher.launch("tout-entries.jsonl") }) {
@@ -180,7 +192,7 @@ private fun App() {
                     ).show()
                 }) { Text(date.toString()) }
             }
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(32.dp))
             // ponytail: underline inputs like Splitwise — transparent box, indicator line + icon chip only
             val fieldColors = TextFieldDefaults.colors(
                 focusedContainerColor = Color.Transparent,
@@ -196,8 +208,18 @@ private fun App() {
                     contentAlignment = Alignment.Center
                 ) { glyph() }
             }
+            // microinteraction: tab switch morphs the input (springy scale + fade)
+            AnimatedContent(
+                targetState = tab,
+                transitionSpec = {
+                    (fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMedium)) +
+                        scaleIn(initialScale = 0.96f, animationSpec = spring(stiffness = Spring.StiffnessMedium)))
+                        .togetherWith(fadeOut(animationSpec = spring(stiffness = Spring.StiffnessHigh)))
+                },
+                label = "tab",
+            ) { t ->
             // main input: big amount for Money, big text otherwise
-            if (tab == Tab.Money) {
+            if (t == Tab.Money) {
                 TextField(
                     value = amount,
                     onValueChange = { amount = it },
@@ -219,14 +241,15 @@ private fun App() {
                     value = text,
                     onValueChange = { text = it },
                     leadingIcon = { Chip { Icon(Icons.Filled.Edit, contentDescription = null, tint = Color.White) } },
-                    placeholder = { Text(if (tab == Tab.Food) "What did you eat?" else "What's on your mind?") },
+                    placeholder = { Text(if (t == Tab.Food) "What did you eat?" else "What's on your mind?") },
                     colors = fieldColors,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { save() }),
                     modifier = Modifier.fillMaxWidth().focusRequester(entryFocus)
                 )
             }
-            Spacer(Modifier.height(16.dp))
+            }
+            Spacer(Modifier.height(24.dp))
             TextField(
                 value = tags,
                 onValueChange = { tags = it },
@@ -238,19 +261,45 @@ private fun App() {
                 keyboardActions = KeyboardActions(onDone = { save() }),
                 modifier = Modifier.fillMaxWidth()
             )
-            Spacer(Modifier.height(8.dp))
-            Button(onClick = { save() }, Modifier.fillMaxWidth()) { Text("Save") }
+            Spacer(Modifier.height(16.dp))
+            // microinteraction: Save squashes on press, springs back on release
+            val saveInteraction = remember { MutableInteractionSource() }
+            val savePressed by saveInteraction.collectIsPressedAsState()
+            val saveScale by animateFloatAsState(
+                if (savePressed) 0.97f else 1f,
+                animationSpec = spring(stiffness = Spring.StiffnessHigh),
+                label = "save",
+            )
+            Button(
+                onClick = { save() },
+                interactionSource = saveInteraction,
+                modifier = Modifier.fillMaxWidth().graphicsLayer {
+                    scaleX = saveScale
+                    scaleY = saveScale
+                }
+            ) { Text("Save") }
             // ponytail: fresh check each composition — appears right after PhonePe is installed, no restart needed
             if (tab == Tab.Money && PhonePe.installed(ctx)) {
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(12.dp))
                 OutlinedButton(
                     onClick = { if (!PhonePe.open(ctx)) status = "Couldn't open PhonePe" },
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("Open PhonePe") }
             }
-            if (status.isNotEmpty()) {
+            // microinteraction: status pops in with a soft bounce, fades out
+            AnimatedVisibility(
+                visible = status.isNotEmpty(),
+                enter = scaleIn(
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                        stiffness = Spring.StiffnessMedium
+                    )
+                ) + fadeIn(),
+                exit = fadeOut() + scaleOut(targetScale = 0.9f),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
                 Row(Modifier.fillMaxWidth(), Arrangement.Center) {
-                    Text(status, Modifier.padding(top = 8.dp))
+                    Text(status, Modifier.padding(top = 12.dp))
                 }
             }
             Spacer(Modifier.weight(1f))
@@ -264,7 +313,7 @@ private fun App() {
                     },
                 )
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(28.dp))
         }
     }
 }
@@ -332,7 +381,12 @@ private fun Dial(onSelect: (Tab) -> Unit, onCenterTap: () -> Unit) {
     }
     val bases = remember { Tab.entries.map { baseAngle(it) } }
     var targetRot by remember { mutableFloatStateOf(0f) }
-    val rot by animateFloatAsState(targetRot, label = "dial")
+    // microinteraction: snap settles with a whisper of overshoot, not a dead stop
+    val rot by animateFloatAsState(
+        targetRot,
+        animationSpec = spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMediumLow),
+        label = "dial",
+    )
     val hapticCtx = LocalContext.current
     var tickIndex by remember { mutableIntStateOf(0) } // rot=0 → Money on top
 
